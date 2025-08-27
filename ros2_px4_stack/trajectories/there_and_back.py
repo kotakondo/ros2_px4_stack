@@ -58,16 +58,15 @@ class ThereAndBackAgain(Node):
 
         # Number of trips 
         self.num_trips = 0 
-        self.max_num_trips = 1
-
+        self.max_num_trips = 100
 
     def get_transform(self):
         # Get initial pose from static transform 
         if not self.init_pose_tf:
-            while not self.tf_buffer.lookup_transform("world_mocap", f"{self.veh}/init_pose", Time()):
+            while not self.tf_buffer.lookup_transform("world_mocap", f"{self.veh}/init_pose", self.get_clock().now()):
                 self.get_logger().info("Waiting on init_pose transform")
             
-            self.init_pose_tf = self.tf_buffer.lookup_transform("world_mocap", f"{self.veh}/init_pose", Time())
+            self.init_pose_tf = self.tf_buffer.lookup_transform("world_mocap", f"{self.veh}/init_pose", self.get_clock().now())
             translation = self.init_pose_tf.transform.translation
             self.x_init = translation.x 
             self.y_init = translation.y 
