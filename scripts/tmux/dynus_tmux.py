@@ -26,6 +26,7 @@ def run_tmux_commands(session_name, commands):
         subprocess.run(["tmux", "split-window", "-v", "-t", f"{session_name}:0.5"], check=True) # Split bottom-right vertically
         subprocess.run(["tmux", "split-window", "-v", "-t", f"{session_name}:0.0"], check=True) # Split bottom-right vertically
         subprocess.run(["tmux", "split-window", "-h", "-t", f"{session_name}:0.0"], check=True) # Split last horizontally
+        subprocess.run(["tmux", "split-window", "-h", "-t", f"{session_name}:0.0"], check=True) # Split last horizontally
 
         # Commands to run in each pane
         for i, cmd in enumerate(commands):
@@ -53,14 +54,16 @@ if __name__ == "__main__":
     # Get odom_type parameters from user 
     parser = argparse.ArgumentParser() 
     parser.add_argument('--odom_type', type=str, default="livox", help="Odometry measurement to send flight controller - motion capture or lidar")
+    parser.add_argument('--planner', type=str, default="dynus", help="Planner - dynus or mighty")
     args = parser.parse_args()
+    planner = args.planner
     odom_type = args.odom_type 
 
     commands = [
-        f"source ~/code/dynus_ws/install/setup.bash && source ~/code/decomp_ws/install/setup.bash && ros2 launch dynus onboard_dynus.launch.py x:=0.0 y:=0.0 z:=0.0 yaw:=0 namespace:={veh} use_obstacle_tracker:=true use_ground_robot:=false use_hardware:=true " \
+        f"source ~/code/{planner}_ws/install/setup.bash && source ~/code/decomp_ws/install/setup.bash && ros2 launch {planner} onboard_{planner}.launch.py x:=0.0 y:=0.0 z:=0.0 yaw:=0 namespace:={veh} use_obstacle_tracker:=false use_ground_robot:=false use_hardware:=true " \
         "use_onboard_localization:=true depth_camera_name:=d455",  # Command for pane 1
 
-        # f"source ~/code/realsense-ros_ws/install/setup.bash && sleep 10 && ros2 launch realsense2_camera rs_d455_launch.py camera_namespace:=PX02 align_depth:=true depth_width:=320 depth_height:=240 depth_fps:=5.0 color_width:=320 color_height:=240 color_fps:=5.0", # Pane  2
+        # f"source ~/code/realsense-ros_ws/install/setup.bash && sleep 10 && ros2 launch realsense2_camera rs_d455_launch.py camera_namespace:=PX01 align_depth:=true depth_module.profile:=848x480x15 color_module.profile:=640x480x15", # Pane  2
 
         f"source ~/code/livox_ws/install/setup.bash && sleep 10 && ros2 launch livox_ros_driver2 run_MID360_launch.py namespace:={veh}", # Pane 3
 
@@ -73,7 +76,7 @@ if __name__ == "__main__":
         # f"sleep 10.0 && source ~/code/dynus_ws/install/setup.bash && cd ~/data && rm -rf * && ros2 bag record -a -o twist_bag", # Pane 7 # /tf /tf_static
 
         # f"sleep 15 && source /home/swarm/code/decomp_ws/install/setup.bash && rm -rf /home/swarm/data/num_1 && source /home/swarm/code/dynus_ws/install/setup.bash && python3 /home/swarm/code/dynus_ws/src/dynus/scripts/bag_record.py --bag_number 1 --bag_path /home/swarm/data",
-        f"sleep 15.0 && source ~/code/dynus_ws/install/setup.bash && cd ~/data && ros2 bag record -o bag_2 {veh}/world PX02/world PX02/mocap/twist /tf /tf_static", # Pane 7 {veh}/pred_pos {veh}/pred_vel
+        f"sleep 15.0 && source ~/code/decomp_ws/install/setup.bash && source ~/code/dynus_ws/install/setup.bash && cd ~/data && ros2 bag record /trajs {veh}/world {veh}/mavros/local_position/pose {veh}/dlio/odom_node/pose {veh}/mavros/setpoint_trajectory/local {veh}/mavros/imu/data_raw {veh}/mavros/imu/data /tf /tf_static", # Pane 7
         
         f"sleep 15.0 && ros2 topic echo {veh}/mavros/local_position/pose", # Pane 8 
 
