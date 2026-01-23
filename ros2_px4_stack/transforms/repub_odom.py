@@ -1,12 +1,6 @@
 #! /usr/bin/env python3
 """A script to republish motion capture data from a ROS topic to a different topic."""
 
-"""
-Juan Notes:
-    1. Might want to remove "/optitrack" from mocap_sub_topic_name (just /PX01/world) 
-    2. Might have some issues with threading and global executors.
-       Go back to humble ros2 python migrating guide to look at their code.
-"""
 
 import rclpy
 from rclpy.node import Node
@@ -41,11 +35,11 @@ class OdomRepublisher(Node):
 
         # Create pose and twist publishers 
         self.pose_pub_topic_name = self.declare_parameter(
-            "~pose_pub_topic_name",  namespace + "/mavros/vision_pose/pose_cov"
+            "~pose_pub_topic_name",  namespace + "/mavros/vision_pose/pose"
         ).value
 
         self.twist_pub_topic_name = self.declare_parameter(
-            "~twist_pub_topic_name", namespace + "/mavros/vision_speed/speed_twist_cov"
+            "~twist_pub_topic_name", namespace + "/mavros/vision_speed/speed_twist"
         ).value 
 
         self._last_pose_msg = None
@@ -53,39 +47,39 @@ class OdomRepublisher(Node):
 
         # Publish pose and twist with covariance at the specified rate in a separate thread
         self._pub_hz = pub_hz
-        self._pose_pub = self.create_publisher(PoseWithCovarianceStamped, self.pose_pub_topic_name, 10)
-        self._twist_pub = self.create_publisher(TwistWithCovarianceStamped, self.twist_pub_topic_name, 10)
+        self._pose_pub = self.create_publisher(PoseStamped, self.pose_pub_topic_name, 10)
+        self._twist_pub = self.create_publisher(TwistStamped, self.twist_pub_topic_name, 10)
         self._pub_thread = Thread(target=self._publish_loop, args=())
         self._pub_thread.daemon = True
         self._pub_thread.start()
 
     def _mocap_pose_cb(self, msg):
-        pose_msg = PoseWithCovarianceStamped()
-        pose_msg.header.stamp = msg.header.stamp
-        pose_msg.header.frame_id = msg.header.frame_id 
-        pose_msg.pose.pose = msg.pose 
-        self._last_pose_msg = pose_msg
-    
-    def _mocap_twist_cb(self, msg):
-        twist_msg = TwistWithCovarianceStamped()
-        twist_msg.header.stamp = msg.header.stamp
-        twist_msg.header.frame_id = msg.header.frame_id 
-        twist_msg.twist.twist = msg.twist 
-        self._last_twist_msg = twist_msg
-
-    def _livox_odom_cb(self, msg):
-        # Populate pose_cov msg
-        pose_msg = PoseWithCovarianceStamped()
+        pose_msg = PoseStamped()
         pose_msg.header.stamp = msg.header.stamp
         pose_msg.header.frame_id = msg.header.frame_id 
         pose_msg.pose = msg.pose 
         self._last_pose_msg = pose_msg
-
-        # Populate twist_cov msg
-        twist_msg = TwistWithCovarianceStamped()
-        twist_msg.header.stamp = msg.header.stamp 
+    
+    def _mocap_twist_cb(self, msg):
+        twist_msg = TwistStamped()
+        twist_msg.header.stamp = msg.header.stamp
         twist_msg.header.frame_id = msg.header.frame_id 
         twist_msg.twist = msg.twist 
+        self._last_twist_msg = twist_msg
+
+    def _livox_odom_cb(self, msg):
+        # Populate pose_cov msg
+        pose_msg = PoseStamped()
+        pose_msg.header.stamp = msg.header.stamp
+        pose_msg.header.frame_id = msg.header.frame_id 
+        pose_msg.pose = msg.pose.pose 
+        self._last_pose_msg = pose_msg
+
+        # Populate twist_cov msg
+        twist_msg = TwistStamped()
+        twist_msg.header.stamp = msg.header.stamp 
+        twist_msg.header.frame_id = msg.header.frame_id 
+        twist_msg.twist = msg.twist.twist 
         self._last_twist_msg = twist_msg  
 
     def _publish_loop(self):
