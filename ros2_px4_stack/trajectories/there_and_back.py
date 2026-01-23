@@ -119,7 +119,7 @@ class ThereAndBackAgain(Node):
 
                 self.goal_pub.publish(new_goal)
                 
-    def reached_goal(self, state: tuple, tol: float=0.25):
+    def reached_goal(self, state: tuple, tol: float=0.5):
         # Compare state and goal in the agent frame 
         x_g, y_g, z_g = self.goal_af
         x_s, y_s, z_s = state 
