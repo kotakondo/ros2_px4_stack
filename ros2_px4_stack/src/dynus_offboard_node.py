@@ -160,15 +160,10 @@ class OffboardDynusFollower(BasicMavrosInterface):
                     y=point.v.y,
                     z=point.v.z
                 ),
-                # angular=Vector3(
-                    # x=p,
-                    # y=q,
-                    # z=r
-                # )
                 angular=Vector3(
                     x=0.0,
                     y=0.0,
-                    z=0.0
+                    z=point.dyaw
                 )
             )],
             accelerations=[Twist(
@@ -216,10 +211,26 @@ class OffboardDynusFollower(BasicMavrosInterface):
                 if self.received_trajectory_setpoint:
                     self.trajectory_setpoint = self._pack_into_traj(self.received_trajectory_setpoint)
 
-                # If trajectory is over 
-                # if (self.count_publishers(self.dynus_goal_topic) == 0):
-                #     self.get_logger().info("Returning to Initial Position")
-                #     flight_state = "RETURN"
+                    # If velocity and acceleration are ~zero, the goal is reached.
+                    # Switch to HOLD to stop re-packing setpoints every cycle,
+                    # which causes PX4's position controller to oscillate.
+                    g = self.received_trajectory_setpoint
+                    vel_mag = math.sqrt(g.v.x**2 + g.v.y**2 + g.v.z**2)
+                    acc_mag = math.sqrt(g.a.x**2 + g.a.y**2 + g.a.z**2)
+                    if vel_mag < 0.01 and acc_mag < 0.01:
+                        flight_state = "HOLD"
+
+            elif flight_state == "HOLD":
+                # Hold last setpoint without re-packing (avoids fresh timestamps
+                # that make PX4 recompute corrections on sensor noise).
+                # Resume tracking if a new goal with nonzero velocity arrives.
+                if self.received_trajectory_setpoint:
+                    g = self.received_trajectory_setpoint
+                    vel_mag = math.sqrt(g.v.x**2 + g.v.y**2 + g.v.z**2)
+                    acc_mag = math.sqrt(g.a.x**2 + g.a.y**2 + g.a.z**2)
+                    if vel_mag >= 0.01 or acc_mag >= 0.01:
+                        self.trajectory_setpoint = self._pack_into_traj(self.received_trajectory_setpoint)
+                        flight_state = "TRAJECTORY"
             
             elif flight_state == "RETURN":
                 self.trajectory_setpoint = init_pos

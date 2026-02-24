@@ -1,9 +1,9 @@
-from launch import LaunchDescription  
+from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
-from launch.substitutions import LaunchConfiguration, EnvironmentVariable 
-import os 
+from launch.substitutions import LaunchConfiguration, EnvironmentVariable
+import os
 
 def generate_launch_description():
     namespace = LaunchConfiguration("ns")
@@ -20,7 +20,7 @@ def generate_launch_description():
         DeclareLaunchArgument('fcu_url', default_value='/dev/ttyACM0:921600'),
         DeclareLaunchArgument('respawn_mavros', default_value='false'),
         DeclareLaunchArgument('odom_type', default_value='livox'),
-        
+
         # Run dynus node
         Node(
             package='ros2_px4_stack',
@@ -35,7 +35,8 @@ def generate_launch_description():
             package='tf2_ros',
             executable='static_transform_publisher',
             name=f'{veh}_odom_to_mocap',
-            arguments=[init_x, init_y, init_z, init_yaw, init_pitch, init_roll, 'world_mocap', f'{veh}/init_pose'] 
+            arguments=[init_x, init_y, init_z, init_yaw, '0.0', '0.0', 'world_mocap', f'{veh}/init_pose']
+            # arguments=[init_x, init_y, init_z, init_yaw, init_pitch, init_roll, 'world_mocap', f'{veh}/init_pose']
         ),
         Node(
             package='tf2_ros',
@@ -70,10 +71,10 @@ def generate_launch_description():
 
         # Run mocap to livox command frame conversion
         Node(
-            package='ros2_px4_stack', 
+            package='ros2_px4_stack',
             executable='mocap_to_livox_frame',
             name='mocap_to_livox_frame',
             namespace=namespace,
-            output='screen', 
+            output='screen',
         )
     ])
