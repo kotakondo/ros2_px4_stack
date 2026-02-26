@@ -7,7 +7,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from geometry_msgs.msg import PoseStamped
 
-GREEN = "\033[32m"
+GREEN = "\033[1;32m"
 RESET = "\033[0m"
 
 
@@ -33,7 +33,7 @@ class OrientationMonitor(Node):
             f"---"
         )
         if abs(o.w) > 0.999:
-            print(f"\n{GREEN}|w| > 0.999 — orientation converged.{RESET}")
+            print(f"\n{GREEN}****** [ORIENTATION] STATE CONVERGED ******{RESET}")
             raise SystemExit(0)
 
 

@@ -1,10 +1,10 @@
 #! /usr/bin/env python3
 
 """
-I'm commenting out the rclpy.sleep() functions because they don't have a 
+I'm commenting out the rclpy.sleep() functions because they don't have a
 ros2 equivalent (what rate are they sleeping on?). If this causes any trouble
 we can try uncommenting the hacky wait_for_seconds() method and using that instead.
-Be careful because the function is blocking and ros might yell at you 
+Be careful because the function is blocking and ros might yell at you
 """
 import os
 import rclpy
@@ -75,20 +75,20 @@ class OffboardDynusFollower(BasicMavrosInterface):
         self.trajectory_setpoint = None
         self.received_trajectory_setpoint = None
 
-        # Dynus subscriptions/publishers 
+        # Dynus subscriptions/publishers
         veh = os.environ.get("VEH_NAME")
         self.dynus_goal_topic = f'/{veh}/goal'
         self.dynus_traj_sub = self.create_subscription(Goal, self.dynus_goal_topic, self.dynus_cb, qos_profile)
-        
-        # Start thread for trajectory publisher 
+
+        # Start thread for trajectory publisher
         self.trajectory_publish_thread = Thread(
             target=self._publish_trajectory_setpoint, args=()
         )
         self.trajectory_publish_thread.daemon = True
-        self.trajectory_publish_thread.start() 
+        self.trajectory_publish_thread.start()
 
 
-    # Method to wait for FCU connection 
+    # Method to wait for FCU connection
     def wait_for_seconds(self, seconds):
         start_time = self.get_clock().now()
         while (self.get_clock().now() - start_time).nanoseconds < seconds * 1e9:
@@ -113,13 +113,13 @@ class OffboardDynusFollower(BasicMavrosInterface):
         Converts a single point into a mavros trajectory object.
         """
         traj_point = MultiDOFJointTrajectoryPoint()
-            
+
         transform = Transform()
         transform.translation.x = point[0]
         transform.translation.y = point[1]
         transform.translation.z = point[2]
         traj_point.transforms = [transform]
-        
+
         twist = Twist()
         traj_point.velocities = [twist]
         traj = MultiDOFJointTrajectory()
@@ -129,16 +129,24 @@ class OffboardDynusFollower(BasicMavrosInterface):
 
     def _pack_into_traj(self, point: Goal):
         """
-        Converts a dynus trajectory into a mavros trajectory point by point. 
+        Converts a dynus trajectory into a mavros trajectory point by point.
+        Uses differential flatness for orientation and body rates (matching
+        the TrajGen offboard node architecture for accurate PX4 tracking).
         """
         assert self.navigation_mode == LOCAL_NAVIGATION, (
             f"Invalid navigation mode: {self.navigation_mode}."
             f"Only local navigation is supported for this method"
         )
 
-        # quat = get_orientation(point)
-        quat = yaw_to_quaternion(point.yaw)
-        # p, q, r = get_angular(point)
+        # Use differential flatness for orientation quaternion.
+        # This accounts for acceleration-induced tilt during TRAVELING,
+        # and reduces to a pure yaw rotation during YAWING (zero accel).
+        quat = get_orientation(point)
+
+        # Use differential flatness for body angular rates (p, q, r).
+        # During YAWING (zero accel/jerk): p=0, q=0, r=dyaw.
+        # During TRAVELING: proper body rates from jerk and yaw rate.
+        p, q, r = get_angular(point)
 
         trajectory_points = [MultiDOFJointTrajectoryPoint(
             transforms=[Transform(
@@ -161,9 +169,9 @@ class OffboardDynusFollower(BasicMavrosInterface):
                     z=point.v.z
                 ),
                 angular=Vector3(
-                    x=0.0,
-                    y=0.0,
-                    z=point.dyaw
+                    x=p,
+                    y=q,
+                    z=r
                 )
             )],
             accelerations=[Twist(
@@ -207,31 +215,13 @@ class OffboardDynusFollower(BasicMavrosInterface):
                     init_pos = takeoff_pos
 
             elif flight_state == "TRAJECTORY":
-                # self.get_logger().info("Following Trajectory")
+                # Always repack setpoints from the latest DYNUS goal.
+                # No HOLD state — matching the TrajGen architecture that
+                # is proven to work. Fresh timestamps every cycle ensure
+                # PX4 always has an up-to-date setpoint with current yaw.
                 if self.received_trajectory_setpoint:
                     self.trajectory_setpoint = self._pack_into_traj(self.received_trajectory_setpoint)
 
-                    # If velocity and acceleration are ~zero, the goal is reached.
-                    # Switch to HOLD to stop re-packing setpoints every cycle,
-                    # which causes PX4's position controller to oscillate.
-                    g = self.received_trajectory_setpoint
-                    vel_mag = math.sqrt(g.v.x**2 + g.v.y**2 + g.v.z**2)
-                    acc_mag = math.sqrt(g.a.x**2 + g.a.y**2 + g.a.z**2)
-                    if vel_mag < 0.01 and acc_mag < 0.01:
-                        flight_state = "HOLD"
-
-            elif flight_state == "HOLD":
-                # Hold last setpoint without re-packing (avoids fresh timestamps
-                # that make PX4 recompute corrections on sensor noise).
-                # Resume tracking if a new goal with nonzero velocity arrives.
-                if self.received_trajectory_setpoint:
-                    g = self.received_trajectory_setpoint
-                    vel_mag = math.sqrt(g.v.x**2 + g.v.y**2 + g.v.z**2)
-                    acc_mag = math.sqrt(g.a.x**2 + g.a.y**2 + g.a.z**2)
-                    if vel_mag >= 0.01 or acc_mag >= 0.01:
-                        self.trajectory_setpoint = self._pack_into_traj(self.received_trajectory_setpoint)
-                        flight_state = "TRAJECTORY"
-            
             elif flight_state == "RETURN":
                 self.trajectory_setpoint = init_pos
 
@@ -242,34 +232,36 @@ class OffboardDynusFollower(BasicMavrosInterface):
 ### Helper Functions ###
 ########################
 
+def wrap_to_pi(angle):
+    """Wrap angle to [-pi, pi)."""
+    return (angle + math.pi) % (2 * math.pi) - math.pi
+
 def yaw_to_quaternion(yaw):
-    qx = 0.0
-    qy = 0.0
+    yaw = wrap_to_pi(yaw)
     qz = math.sin(yaw / 2.0)
     qw = math.cos(yaw / 2.0)
-
-    return [qx, qy, qz, qw]
+    return [0.0, 0.0, qz, qw]
 
 def get_drone_frame(point):
     g = 9.81
 
-    # Construct differentially flat vectors 
+    # Construct differentially flat vectors
     sigma = np.array([[point.p.x, point.p.y, point.p.z, point.yaw]]).T
     sigma_dot_dot = np.array([[point.a.x, point.a.y, point.a.z, 0]]).T
 
-    # Compute z_B 
+    # Compute z_B
     t = np.array([[sigma_dot_dot[0][0], sigma_dot_dot[1][0], sigma_dot_dot[2][0] + g]]).T
-    z_B = t / np.linalg.norm(t) 
+    z_B = t / np.linalg.norm(t)
 
     # Compute intermediate yaw vector x_C
     x_C = np.array([[np.cos(sigma[3][0]), np.sin(sigma[3][0]), 0]]).T
 
     # Compute x-axis and y-axis of drone frame measured in world frame
-    cross_prod = np.cross(z_B.T[0], x_C.T[0]) 
-    y_B = np.array([cross_prod / np.linalg.norm(cross_prod)]).T 
-    x_B = np.array([np.cross(y_B.T[0], z_B.T[0])]).T 
+    cross_prod = np.cross(z_B.T[0], x_C.T[0])
+    y_B = np.array([cross_prod / np.linalg.norm(cross_prod)]).T
+    x_B = np.array([np.cross(y_B.T[0], z_B.T[0])]).T
 
-    return x_B, y_B, z_B 
+    return x_B, y_B, z_B
 
 def get_orientation(point):
     x_B, y_B, z_B = get_drone_frame(point)
@@ -280,24 +272,24 @@ def get_orientation(point):
     return Rotation.from_matrix(R_W_B).as_quat() # As [x, y, z, w] vector
 
 def get_angular(point):
-    m = 2.906  
+    m = 2.906
     g = 9.81
-    z_W = np.array([[0, 0, 1]]).T 
+    z_W = np.array([[0, 0, 1]]).T
     x_B, y_B, z_B = get_drone_frame(point)
-    jerk = np.array([[point.j.x, point.j.y, point.j.z]]).T 
-    dpsi = point.dyaw 
+    jerk = np.array([[point.j.x, point.j.y, point.j.z]]).T
+    dpsi = point.dyaw
 
-    # Compute u1 
+    # Compute u1
     f_des = m * g * z_W + m * np.array([[point.a.x, point.a.y, point.a.z]]).T
     u1 = (f_des.T @ z_B)[0, 0]
 
     # Compute h_om
     h_om = m / u1 * (jerk - (z_B.T @ jerk)[0, 0] * z_B)
 
-    # Compute angular velocities 
+    # Compute angular velocities
     p = float(-(h_om.T @ y_B)[0, 0])
     q = float((h_om.T @ x_B)[0, 0])
-    r = float(dpsi * (z_W.T @ z_B)[0, 0]) 
+    r = float(dpsi * (z_W.T @ z_B)[0, 0])
 
     return p, q, r
 
@@ -309,7 +301,6 @@ def main():
         node_name=node_name, navigation_mode=LOCAL_NAVIGATION
     )
     rclpy.spin(node)
-    
+
 if __name__ == "__main__":
     main()
-

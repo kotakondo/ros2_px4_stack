@@ -22,14 +22,14 @@ def get_tmux_base_index():
     return win_base, pane_base
 
 
-def run_tmux_commands(session_name, commands):
+def run_tmux_commands(session_name, commands, top_pane=None):
     """
-    Set up a TMUX session with a tiled grid of named panes, each running a command.
+    Set up a TMUX session with an optional full-width top pane and a tiled
+    grid of named panes below.
 
-    commands: list of (name, command_string) tuples.
-    Dynamically creates N+1 panes for N commands (the extra pane is a blank
-    shell at the end for ad-hoc use). Pane splitting and indexing respect
-    the user's tmux base-index / pane-base-index settings.
+    top_pane:  optional (name, command_string) tuple for a full-width pane
+               at the top of the window (e.g. htop).
+    commands:  list of (name, command_string) tuples for the tiled grid.
     """
     try:
         # Start a new TMUX session (starts the server if not already running)
@@ -46,26 +46,35 @@ def run_tmux_commands(session_name, commands):
         w = win_base
         p = pane_base
 
-        # We need (len(commands) + 1) panes total: one per command + one blank.
-        # new-session already created the first pane, so split (total - 1) more.
-        total_panes = len(commands) + 1
-        for i in range(total_panes - 1):
-            # Alternate horizontal / vertical splits for a reasonable layout
+        # Step 1: Create all command panes + blank shell using tiled layout.
+        # (top_pane is added AFTER tiling so it doesn't get mixed into the grid.)
+        total_bottom = len(commands) + 1
+        for i in range(total_bottom - 1):
             flag = "-h" if i % 2 == 0 else "-v"
             subprocess.run(
                 ["tmux", "split-window", flag, "-t", f"{session_name}:{w}"],
                 check=True,
             )
-            # Re-tile after every split so subsequent splits have room
             subprocess.run(
                 ["tmux", "select-layout", "-t", f"{session_name}:{w}", "tiled"],
                 check=True,
             )
 
-        # Send each command to its pane and set the pane title
-        for i, (name, cmd) in enumerate(commands):
+        # Final tiled layout for all command panes
+        subprocess.run(
+            ["tmux", "select-layout", "-t", f"{session_name}:{w}", "tiled"],
+            check=True,
+        )
+
+        # Assign commands to panes
+        for i, entry in enumerate(commands):
+            # Support (name, cmd) or (name, cmd, auto_run) tuples
+            if len(entry) == 3:
+                name, cmd, auto_run = entry
+            else:
+                name, cmd = entry
+                auto_run = True
             pane_target = f"{session_name}:{w}.{p + i}"
-            # Set pane title
             subprocess.run(
                 ["tmux", "select-pane", "-t", pane_target, "-T", name],
                 check=True,
@@ -75,25 +84,48 @@ def run_tmux_commands(session_name, commands):
                 f"source ~/code/bridge_ws/install/setup.bash && "
                 f"{cmd}"
             )
-            subprocess.run(
-                ["tmux", "send-keys", "-t", pane_target, full_command, "C-m"],
-                check=True,
-            )
+            send_keys_args = ["tmux", "send-keys", "-t", pane_target, full_command]
+            if auto_run:
+                send_keys_args.append("C-m")
+            subprocess.run(send_keys_args, check=True)
 
-        # Last pane is left as a blank shell
+        # Last pane is a blank shell with dynus_ws sourced
         blank_pane = f"{session_name}:{w}.{p + len(commands)}"
         subprocess.run(
             ["tmux", "select-pane", "-t", blank_pane, "-T", "SHELL"],
             check=True,
         )
+        subprocess.run(
+            ["tmux", "send-keys", "-t", blank_pane,
+             "source ~/code/dynus_ws/install/setup.bash", "C-m"],
+            check=True,
+        )
 
-        # Final tiled layout
-        subprocess.run(["tmux", "select-layout", "-t", session_name, "tiled"], check=True)
+        # Step 2: Add the top pane AFTER tiling using -f (full-width) and -b (before).
+        # This creates a new pane spanning the entire window width above the tiled grid.
+        if top_pane:
+            subprocess.run(
+                ["tmux", "split-window", "-v", "-f", "-b", "-p", "20",
+                 "-t", f"{session_name}:{w}.{p}"],
+                check=True,
+            )
+            # The new pane becomes the lowest index; existing panes shift up by 1.
+            top_target = f"{session_name}:{w}.{p}"
+            subprocess.run(
+                ["tmux", "select-pane", "-t", top_target, "-T", top_pane[0]],
+                check=True,
+            )
+            subprocess.run(
+                ["tmux", "send-keys", "-t", top_target, top_pane[1], "C-m"],
+                check=True,
+            )
+            # Blank pane index shifted by 1
+            blank_pane = f"{session_name}:{w}.{p + len(commands) + 1}"
 
         # Focus the blank pane so the user can type immediately
         subprocess.run(["tmux", "select-pane", "-t", blank_pane], check=True)
 
-        # Attach to the session
+        total_panes = total_bottom + (1 if top_pane else 0)
         print(f"TMUX session '{session_name}' created with {total_panes} panes. Attaching...")
         subprocess.run(["tmux", "attach-session", "-t", session_name])
 
@@ -131,6 +163,21 @@ if __name__ == "__main__":
             f"depth_camera_name:=d455"
         )),
 
+        ("INIT POSE", (
+            'sleep 10.0 && source ~/code/get_init_pose.sh && echo && '
+            'printf "\\033[1;32minit pos: (%.2f, %.2f, %.2f)\\033[0m\\n" ${INIT_X} ${INIT_Y} ${INIT_Z} && '
+            'printf "\\033[1;32minit att: (%.2f, %.2f, %.2f)\\033[0m\\n" ${INIT_ROLL} ${INIT_PITCH} ${INIT_YAW} && '
+            'echo -e "\\033[1;32m****** [INIT POSE] INITIAL POSE RECEIVED ******\\033[0m" && echo'
+        )),
+
+        ("ORIENTATION",
+            f"sleep 15.0 && python3 ~/code/mavros_ws/src/ros2_px4_stack/scripts/monitor_orientation.py {veh}/mavros/local_position/pose"),
+
+        ("MAVROS",
+            f"sleep 5.0 && ros2 launch mavros px4.launch namespace:={veh}/mavros tgt_system:={mav_id} 2>&1"
+            r" | grep -v '\[INFO\]'"
+            r" | sed -e 's/\[ERROR\]/\x1b[1;31m[ERROR]\x1b[0m/g' -e 's/\[WARN\]/\x1b[1;33m[WARN]\x1b[0m/g'"),
+
         ("LIVOX", (
             f"source ~/code/livox_ws/install/setup.bash && "
             f"sleep 10 && "
@@ -143,9 +190,6 @@ if __name__ == "__main__":
             f"sleep 10 && "
             f"ros2 launch direct_lidar_inertial_odometry dlio.launch.py namespace:={veh} > /dev/null"
         )),
-
-        ("MAVROS",
-            f"sleep 5.0 && ros2 launch mavros px4.launch namespace:={veh}/mavros tgt_system:={mav_id}"),
 
         ("PX4 BRIDGE", (
             f"source ~/code/dynus_ws/install/setup.bash && "
@@ -162,15 +206,6 @@ if __name__ == "__main__":
             f"mkdir -p ~/data/dynus && "
             f"python3 ~/code/dynus_ws/src/dynus/scripts/bag_record.py "
             f"--bag_name $BAG_NAME --bag_path ~/data/dynus --hardware --agents {veh}"
-        )),
-
-        ("ORIENTATION",
-            f"sleep 15.0 && python3 ~/code/mavros_ws/src/ros2_px4_stack/scripts/monitor_orientation.py {veh}/mavros/local_position/pose"),
-
-        ("INIT POSE", (
-            'sleep 10.0 && source ~/code/get_init_pose.sh && echo && '
-            'echo -e "\\033[32minit pos: (${INIT_X}, ${INIT_Y}, ${INIT_Z})\\033[0m" && '
-            'echo -e "\\033[32minit att: (${INIT_ROLL}, ${INIT_PITCH}, ${INIT_YAW})\\033[0m" && echo'
         )),
 
         ("ZENOH", (
@@ -191,6 +226,11 @@ if __name__ == "__main__":
 
         ("DATA DIR",
             "cd ~/data/dynus && ls -lt"),
+
+        ("GOAL MONITOR", (
+            f"source ~/code/dynus_ws/install/setup.bash && "
+            f"ros2 launch dynus goal_monitor.launch.py"
+        ), False),
     ]
 
-    run_tmux_commands(session_name, commands)
+    run_tmux_commands(session_name, commands, top_pane=("HTOP", "htop"))

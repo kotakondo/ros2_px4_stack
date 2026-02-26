@@ -13,11 +13,11 @@ echo "Setting PX4 parameters on namespace: $NS"
 # Use vision for position/velocity/yaw
 ros2 service call ${NS}/mavros/param/set mavros_msgs/srv/ParamSet "{param_id: 'EKF2_EV_CTRL', value: {integer: 15}}"
 # Vision position noise [m] — lower = more trust in DLIO
-ros2 service call ${NS}/mavros/param/set mavros_msgs/srv/ParamSet "{param_id: 'EKF2_EVP_NOISE', value: {real: 0.05}}"
+ros2 service call ${NS}/mavros/param/set mavros_msgs/srv/ParamSet "{param_id: 'EKF2_EVP_NOISE', value: {real: 0.01}}"
 # Vision velocity noise [m/s]
-ros2 service call ${NS}/mavros/param/set mavros_msgs/srv/ParamSet "{param_id: 'EKF2_EVV_NOISE', value: {real: 0.05}}"
+ros2 service call ${NS}/mavros/param/set mavros_msgs/srv/ParamSet "{param_id: 'EKF2_EVV_NOISE', value: {real: 0.01}}"
 # Vision angle noise [rad]
-ros2 service call ${NS}/mavros/param/set mavros_msgs/srv/ParamSet "{param_id: 'EKF2_EVA_NOISE', value: {real: 0.05}}"
+ros2 service call ${NS}/mavros/param/set mavros_msgs/srv/ParamSet "{param_id: 'EKF2_EVA_NOISE', value: {real: 0.01}}"
 # Vision delay compensation [ms] — match DLIO pipeline latency
 ros2 service call ${NS}/mavros/param/set mavros_msgs/srv/ParamSet "{param_id: 'EKF2_EV_DELAY', value: {real: 25.0}}"
 # Height reference: 3 = Vision

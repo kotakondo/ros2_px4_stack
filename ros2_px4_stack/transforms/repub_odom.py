@@ -95,12 +95,12 @@ class OdomRepublisher(Node):
         # DLIO publishes zero covariance — PX4 EKF2 needs nonzero values
         # to trust the external vision estimate.  Diagonal: [x, y, z, roll, pitch, yaw]
         pose_cov = [0.0] * 36
-        pose_cov[0]  = 0.01   # x  variance [m^2]
-        pose_cov[7]  = 0.01   # y  variance [m^2]
-        pose_cov[14] = 0.01   # z  variance [m^2]
-        pose_cov[21] = 0.01   # roll  variance [rad^2]
-        pose_cov[28] = 0.01   # pitch variance [rad^2]
-        pose_cov[35] = 0.01   # yaw   variance [rad^2]
+        pose_cov[0]  = 0.001  # x  variance [m^2]
+        pose_cov[7]  = 0.001  # y  variance [m^2]
+        pose_cov[14] = 0.001  # z  variance [m^2]
+        pose_cov[21] = 0.002  # roll  variance [rad^2]
+        pose_cov[28] = 0.002  # pitch variance [rad^2]
+        pose_cov[35] = 0.002  # yaw   variance [rad^2]
         pose_msg.pose.covariance = pose_cov
         self._last_pose_msg = pose_msg
 
@@ -111,12 +111,12 @@ class OdomRepublisher(Node):
         twist_msg.twist.twist = msg.twist.twist
 
         twist_cov = [0.0] * 36
-        twist_cov[0]  = 0.01   # vx variance [(m/s)^2]
-        twist_cov[7]  = 0.01   # vy variance [(m/s)^2]
-        twist_cov[14] = 0.01   # vz variance [(m/s)^2]
-        twist_cov[21] = 0.01   # wx variance [(rad/s)^2]
-        twist_cov[28] = 0.01   # wy variance [(rad/s)^2]
-        twist_cov[35] = 0.01   # wz variance [(rad/s)^2]
+        twist_cov[0]  = 0.001  # vx variance [(m/s)^2]
+        twist_cov[7]  = 0.001  # vy variance [(m/s)^2]
+        twist_cov[14] = 0.001  # vz variance [(m/s)^2]
+        twist_cov[21] = 0.002  # wx variance [(rad/s)^2]
+        twist_cov[28] = 0.002  # wy variance [(rad/s)^2]
+        twist_cov[35] = 0.002  # wz variance [(rad/s)^2]
         twist_msg.twist.covariance = twist_cov
         self._last_twist_msg = twist_msg
 
