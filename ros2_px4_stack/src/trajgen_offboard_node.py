@@ -5,6 +5,7 @@ import rclpy
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from rclpy.node import Node
 import math
+import time
 from threading import Thread
 from geometry_msgs.msg import PoseStamped, Pose, Point, Quaternion, Transform, Twist, Vector3
 from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
@@ -114,15 +115,19 @@ class OffboardTrajgenFollower(BasicMavrosInterface):
         self.trajgen_state_pub.publish(trajgen_state)
 
     def _publish_trajectory_setpoint(self):
-        rate = 100 #Hz
-        rate = self.create_rate(rate)
+        # Runs in a side thread. Using rclpy's create_rate().sleep() here
+        # deadlocks unless a MultiThreadedExecutor is spinning (the main
+        # thread uses spin_once, so the rate never wakes). Plain time.sleep
+        # is single-thread safe and hits the 100 Hz cadence PX4 needs to
+        # keep OFFBOARD latched (failsafe fires after ~1 s without setpoints).
+        period = 0.01  # 100 Hz
         while rclpy.ok():
             if (
                 self.navigation_mode == LOCAL_NAVIGATION
                 and self.trajectory_setpoint is not None
             ):
                 self.setpoint_traj_pub.publish(self.trajectory_setpoint)
-            rate.sleep()
+            time.sleep(period)
 
     def _pack_into_traj_gen(self, point: GoalSnap):
         assert self.navigation_mode == LOCAL_NAVIGATION, (
