@@ -1,0 +1,9 @@
+# colcon output dirs (belong at the workspace root, not inside a package).
+/build/
+/install/
+/log/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
