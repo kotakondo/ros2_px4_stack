@@ -8,7 +8,6 @@ Brings up (in a tmux grid):
   2. trajectory_generator_ros2 (publishes snapstack_msgs2/Goal)
   3. ros2_px4_stack offboard bridge (Goal -> MAVROS setpoints)
   4. behavior_selector2 GUI (GO / END / KILL buttons)
-  5. `ros2 topic echo <ns>/goal` for debugging
 
 Usage:
     python3 sitl_tmux.py [--px4_dir ~/code/PX4-Autopilot] [--model gz_x500]
@@ -71,9 +70,7 @@ def build_commands(px4_dir: str, model: str, veh: str, mav_id: str) -> list[str]
         f"ros2 launch trajectory_generator_ros2 base_station.launch.py"
     )
 
-    goal_echo = f"sleep 20 && ros2 topic echo /{veh}/goal"
-
-    return [sitl, mavros, trajgen, bridge, gui, goal_echo]
+    return [sitl, mavros, trajgen, bridge, gui]
 
 
 def run_tmux(session: str, commands: list[str]) -> None:
