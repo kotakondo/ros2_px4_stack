@@ -15,7 +15,7 @@ class OdomRepublisher(Node):
         super().__init__('odom_publisher')
 
         namespace = self.get_namespace()
-        self.odom_type = self.declare_parameter("~odom_type", "mocap").value # Odom type defaults to mocap
+        self.odom_type = self.declare_parameter("~odom_type", "livox").value # Odom type defaults to livox (Fast-LIO)
 
         # Create subscription for mocap or lidar odometry
         if self.odom_type == "mocap":
@@ -29,7 +29,7 @@ class OdomRepublisher(Node):
             self._mocap_twist_sub = self.create_subscription(TwistStamped, self.twist_sub_topic_name, self._mocap_twist_cb, 10)
         elif self.odom_type == "livox":
             self.odom_sub_topic_name = self.declare_parameter(
-                "~odom_sub_topic_name", namespace + "/dlio/odom_node/odom"
+                "~odom_sub_topic_name", namespace + "/fast_lio/Odometry"
             ).value
             self._odom_sub = self.create_subscription(Odometry, self.odom_sub_topic_name, self._livox_odom_cb, 10)
 
@@ -86,21 +86,20 @@ class OdomRepublisher(Node):
         self._last_twist_msg = twist_msg
 
     def _livox_odom_cb(self, msg):
-        # Populate pose_cov msg
+        # Forward raw odom to PX4 (in camera_init frame).
+        # DYNUS handles world↔local conversion internally via init_pose_transform.
         pose_msg = PoseWithCovarianceStamped()
         pose_msg.header.stamp = msg.header.stamp
         pose_msg.header.frame_id = msg.header.frame_id
         pose_msg.pose.pose = msg.pose.pose
 
-        # DLIO publishes zero covariance — PX4 EKF2 needs nonzero values
-        # to trust the external vision estimate.  Diagonal: [x, y, z, roll, pitch, yaw]
         pose_cov = [0.0] * 36
-        pose_cov[0]  = 0.001  # x  variance [m^2]
-        pose_cov[7]  = 0.001  # y  variance [m^2]
-        pose_cov[14] = 0.001  # z  variance [m^2]
-        pose_cov[21] = 0.002  # roll  variance [rad^2]
-        pose_cov[28] = 0.002  # pitch variance [rad^2]
-        pose_cov[35] = 0.002  # yaw   variance [rad^2]
+        pose_cov[0]  = 0.001   # x  variance [m^2]
+        pose_cov[7]  = 0.001   # y  variance [m^2]
+        pose_cov[14] = 0.001   # z  variance [m^2]
+        pose_cov[21] = 0.001   # roll  variance [rad^2]
+        pose_cov[28] = 0.001   # pitch variance [rad^2]
+        pose_cov[35] = 0.001   # yaw   variance [rad^2]
         pose_msg.pose.covariance = pose_cov
         self._last_pose_msg = pose_msg
 
@@ -111,12 +110,12 @@ class OdomRepublisher(Node):
         twist_msg.twist.twist = msg.twist.twist
 
         twist_cov = [0.0] * 36
-        twist_cov[0]  = 0.001  # vx variance [(m/s)^2]
-        twist_cov[7]  = 0.001  # vy variance [(m/s)^2]
-        twist_cov[14] = 0.001  # vz variance [(m/s)^2]
-        twist_cov[21] = 0.002  # wx variance [(rad/s)^2]
-        twist_cov[28] = 0.002  # wy variance [(rad/s)^2]
-        twist_cov[35] = 0.002  # wz variance [(rad/s)^2]
+        twist_cov[0]  = 0.001   # vx variance [(m/s)^2]
+        twist_cov[7]  = 0.001   # vy variance [(m/s)^2]
+        twist_cov[14] = 0.001   # vz variance [(m/s)^2]
+        twist_cov[21] = 0.001   # wx variance [(rad/s)^2]
+        twist_cov[28] = 0.001   # wy variance [(rad/s)^2]
+        twist_cov[35] = 0.001   # wz variance [(rad/s)^2]
         twist_msg.twist.covariance = twist_cov
         self._last_twist_msg = twist_msg
 

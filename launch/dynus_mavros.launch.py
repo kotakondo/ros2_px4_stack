@@ -35,8 +35,7 @@ def generate_launch_description():
             package='tf2_ros',
             executable='static_transform_publisher',
             name=f'{veh}_odom_to_mocap',
-            arguments=[init_x, init_y, init_z, init_yaw, '0.0', '0.0', 'world_mocap', f'{veh}/init_pose']
-            # arguments=[init_x, init_y, init_z, init_yaw, init_pitch, init_roll, 'world_mocap', f'{veh}/init_pose']
+            arguments=[init_x, init_y, init_z, init_yaw, init_pitch, init_roll, 'world_mocap', f'{veh}/init_pose']
         ),
         Node(
             package='tf2_ros',
@@ -49,6 +48,24 @@ def generate_launch_description():
             executable='static_transform_publisher',
             name='map_to_odom',
             arguments=['0', '0', '0', '0', '0', '0', 'world', 'map']
+        ),
+        # camera_init (Fast-LIO origin) = PX03/init_pose (DLIO origin)
+        # Both represent the drone's starting position. Linking them with identity
+        # ensures DYNUS's TF lookup (map -> PX03/init_pose) produces the correct
+        # transform for converting goals to camera_init frame (which PX4 operates in).
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='init_pose_to_camera_init',
+            arguments=['0', '0', '0', '0', '0', '0', f'{veh}/init_pose', 'camera_init']
+        ),
+        # Fast-LIO publishes camera_init -> body; map this to PX03/base_link so the
+        # mapper's TF chain (world -> camera_init -> body -> PX03/base_link) works
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='body_to_base_link',
+            arguments=['0', '0', '0', '0', '0', '0', 'body', f'{veh}/base_link']
         ),
         Node(
             package='tf2_ros',

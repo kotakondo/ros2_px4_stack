@@ -150,21 +150,33 @@ if __name__ == "__main__":
     odom_type = args.odom_type
     planner = args.planner
     zenoh_mode = args.mode
+    use_onboard_loc = odom_type != "mocap"
 
     commands = [
-        ("DYNUS", (
-            f"source ~/code/dynus_ws/install/setup.bash && "
+        # ("DYNUS", (
+        #     f"source ~/code/dynus_ws/install/setup.bash && "
+        #     f"source ~/code/decomp_ws/install/setup.bash && "
+        #     f"sleep 10 && "
+        #     f"ros2 launch dynus onboard_dynus.launch.py "
+        #     f"x:=0.0 y:=0.0 z:=0.0 yaw:=0 namespace:={veh} "
+        #     f"use_obstacle_tracker:=false use_ground_robot:=false "
+        #     f"use_hardware:=true use_onboard_localization:={'true' if use_onboard_loc else 'false'} "
+        #     f"depth_camera_name:=d455"
+        # )),
+
+        ("MIGHTY", (
+            f"source ~/code/mighty_ws/install/setup.bash && "
             f"source ~/code/decomp_ws/install/setup.bash && "
             f"sleep 10 && "
-            f"ros2 launch dynus onboard_dynus.launch.py "
+            f"ros2 launch mighty onboard_mighty.launch.py "
             f"x:=0.0 y:=0.0 z:=0.0 yaw:=0 namespace:={veh} "
             f"use_obstacle_tracker:=false use_ground_robot:=false "
-            f"use_hardware:=true use_onboard_localization:=true "
+            f"use_hardware:=true use_onboard_localization:={'true' if use_onboard_loc else 'false'} "
             f"depth_camera_name:=d455"
         )),
 
         ("INIT POSE", (
-            'sleep 10.0 && source ~/code/get_init_pose.sh && echo && '
+            f'sleep 20.0 && export ODOM_TYPE={odom_type} && source ~/code/get_init_pose.sh && echo && '
             'printf "\\033[1;32minit pos: (%.2f, %.2f, %.2f)\\033[0m\\n" ${INIT_X} ${INIT_Y} ${INIT_Z} && '
             'printf "\\033[1;32minit att: (%.2f, %.2f, %.2f)\\033[0m\\n" ${INIT_ROLL} ${INIT_PITCH} ${INIT_YAW} && '
             'echo -e "\\033[1;32m****** [INIT POSE] INITIAL POSE RECEIVED ******\\033[0m" && echo'
@@ -174,26 +186,43 @@ if __name__ == "__main__":
             f"sleep 15.0 && python3 ~/code/mavros_ws/src/ros2_px4_stack/scripts/monitor_orientation.py {veh}/mavros/local_position/pose"),
 
         ("MAVROS",
-            f"sleep 5.0 && ros2 launch mavros px4.launch namespace:={veh}/mavros tgt_system:={mav_id} 2>&1"
-            r" | grep -v '\[INFO\]'"
-            r" | sed -e 's/\[ERROR\]/\x1b[1;31m[ERROR]\x1b[0m/g' -e 's/\[WARN\]/\x1b[1;33m[WARN]\x1b[0m/g'"),
+            f"sleep 5.0 && ros2 launch mavros px4.launch namespace:={veh}/mavros tgt_system:={mav_id}"),
+            # f"sleep 5.0 && ros2 launch mavros px4.launch namespace:={veh}/mavros tgt_system:={mav_id} 2>&1"
+            # r" | grep -v '\[INFO\]'"
+            # r" | sed -e 's/\[ERROR\]/\x1b[1;31m[ERROR]\x1b[0m/g' -e 's/\[WARN\]/\x1b[1;33m[WARN]\x1b[0m/g'"),
+
+        # ("IMU RATE",
+        #     f"sleep 15 && bash ~/code/mavros_ws/src/ros2_px4_stack/scripts/set_px4_imu_rate.sh /{veh} && "
+        #     f"sleep 3 && python3 ~/code/mavros_ws/src/ros2_px4_stack/scripts/check_imu_rate.py /{veh}/mavros/imu/data_raw"),
 
         ("LIVOX", (
             f"source ~/code/livox_ws/install/setup.bash && "
             f"sleep 10 && "
             f"ros2 launch livox_ros_driver2 run_MID360_launch.py namespace:={veh}"
-        )),
+        )),]
 
-        ("DLIO", (
-            f"source ~/code/dynus_ws/install/setup.bash && "
-            f"source ~/code/dlio_ws/install/setup.bash && "
-            f"sleep 10 && "
-            f"ros2 launch direct_lidar_inertial_odometry dlio.launch.py namespace:={veh} > /dev/null"
+    # DLIO disabled — FAST-LIO provides onboard localization instead.
+    # Both DLIO and FAST-LIO cannot run simultaneously (CPU starvation).
+    # if use_onboard_loc:
+    #     commands.append(("DLIO", (
+    #         f"source ~/code/dynus_ws/install/setup.bash && "
+    #         f"source ~/code/dlio_ws/install/setup.bash && "
+    #         f"sleep 10 && "
+    #         f"ros2 launch direct_lidar_inertial_odometry dlio.launch.py namespace:={veh}"
+    #     )))
+
+    commands += [
+        ("FAST-LIO", (
+            f"source ~/code/livox_ws/install/setup.bash && "
+            f"source ~/code/fast_lio_ws/install/setup.bash && "
+            f"sleep 15 && "
+            f"taskset -c 13,14,15 ros2 launch fast_lio mapping.launch.py config_file:=mid360.yaml rviz:=false namespace:={veh}/fast_lio"
         )),
 
         ("PX4 BRIDGE", (
             f"source ~/code/dynus_ws/install/setup.bash && "
-            f"sleep 10 && "
+            f"sleep 20 && "
+            f"export ODOM_TYPE={odom_type} && "
             f"source ~/code/get_init_pose.sh && "
             f"ros2 launch ros2_px4_stack dynus_mavros.launch.py odom_type:={odom_type}"
         )),
@@ -202,26 +231,35 @@ if __name__ == "__main__":
             f"sleep 15 && "
             f"source ~/code/decomp_ws/install/setup.bash && "
             f"source ~/code/dynus_ws/install/setup.bash && "
+            f"source ~/code/livox_ws/install/setup.bash && "
             f"BAG_NAME=$(date +%Y%m%d_%H%M%S) && "
             f"mkdir -p ~/data/dynus && "
             f"python3 ~/code/dynus_ws/src/dynus/scripts/bag_record.py "
             f"--bag_name $BAG_NAME --bag_path ~/data/dynus --hardware --agents {veh}"
         )),
 
-        ("ZENOH", (
-            f"source ~/code/zenoh_ws/install/setup.bash && "
-            f"source ~/code/decomp_ws/install/setup.bash && "
-            f"source ~/code/dynus_ws/install/setup.bash && "
-            f"echo 'Zenoh mode: {zenoh_mode}' && "
-            f"ros2 run zenoh_vendor zenoh-bridge-ros2dds "
-            f"-c ~/code/zenoh_ws/src/zenoh_vendor/configs/zenoh_agent_{zenoh_mode}.json5"
-        )),
+         ("ZENOH", (
+             f"source ~/code/zenoh_ws/install/setup.bash && "
+             f"source ~/code/decomp_ws/install/setup.bash && "
+             f"source ~/code/dynus_ws/install/setup.bash && "
+             f"echo 'Zenoh mode: {zenoh_mode}' && "
+             f"ros2 run zenoh_vendor zenoh-bridge-ros2dds "
+             f"-c ~/code/zenoh_ws/src/zenoh_vendor/configs/zenoh_agent_{zenoh_mode}.json5"
+         )),
 
         ("ACL MAP", (
             f"source ~/code/dynus_ws/install/setup.bash && "
             f"ros2 launch global_mapper_ros global_mapper_node.launch.py "
             f"quad:={veh} depth_pointcloud_topic:=livox/lidar hardware:=true "
             f"pose_topic:=global_pose"
+        )),
+
+        ("ODOM MONITOR", (
+            f"source ~/code/mavros_ws/install/setup.bash && "
+            f"source ~/code/dynus_ws/install/setup.bash && "
+            f"sleep 25 && "
+            f"export ODOM_TYPE={odom_type} && source ~/code/get_init_pose.sh && "
+            f"python3 ~/code/mavros_ws/src/ros2_px4_stack/scripts/monitor/side_by_side.py"
         )),
 
         ("DATA DIR",
@@ -231,6 +269,11 @@ if __name__ == "__main__":
             f"source ~/code/dynus_ws/install/setup.bash && "
             f"ros2 launch dynus goal_monitor.launch.py"
         ), False),
+
+        # ("SEND GOAL", (
+        #     f"ros2 topic pub --once /{veh}/term_goal geometry_msgs/msg/PoseStamped "
+        #     f"\"{{header: {{frame_id: 'world'}}, pose: {{position: {{x: 0.0, y: 0.0, z: 1.0}}, orientation: {{w: 1.0}}}}}}\""
+        # ), False),
     ]
 
     run_tmux_commands(session_name, commands, top_pane=("HTOP", "htop"))

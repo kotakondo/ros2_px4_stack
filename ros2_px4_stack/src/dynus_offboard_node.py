@@ -16,6 +16,7 @@ from geometry_msgs.msg import PoseStamped, Pose, Point, Quaternion, Transform, T
 from dynus_interfaces.msg import Goal
 from dynus_interfaces.msg import State as StateDynus
 from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
+from mavros_msgs.msg import AttitudeTarget
 from scipy.spatial.transform import Rotation
 import numpy as np
 
@@ -72,17 +73,28 @@ class OffboardDynusFollower(BasicMavrosInterface):
         qos_profile.durability = DurabilityPolicy.VOLATILE
         qos_profile.reliability = ReliabilityPolicy.BEST_EFFORT
 
+        # QoS for Dynus goal: must match Dynus publisher (RELIABLE + VOLATILE)
+        goal_qos = QoSProfile(depth=10)
+        goal_qos.durability = DurabilityPolicy.VOLATILE
+        goal_qos.reliability = ReliabilityPolicy.RELIABLE
+
         self.trajectory_setpoint = None
+        self.attitude_setpoint = None
         self.received_trajectory_setpoint = None
 
         # Dynus subscriptions/publishers
         veh = os.environ.get("VEH_NAME")
         self.dynus_goal_topic = f'/{veh}/goal'
-        self.dynus_traj_sub = self.create_subscription(Goal, self.dynus_goal_topic, self.dynus_cb, qos_profile)
+        self.dynus_traj_sub = self.create_subscription(Goal, self.dynus_goal_topic, self.dynus_cb, goal_qos)
 
-        # Start thread for trajectory publisher
+        # Attitude setpoint publisher — bypasses PX4's position controller entirely.
+        # PX4 only runs its attitude/rate controller using onboard IMU.
+        self.attitude_pub = self.create_publisher(
+            AttitudeTarget, "mavros/setpoint_raw/attitude", qos_profile)
+
+        # Start thread for setpoint publisher
         self.trajectory_publish_thread = Thread(
-            target=self._publish_trajectory_setpoint, args=()
+            target=self._publish_setpoint, args=()
         )
         self.trajectory_publish_thread.daemon = True
         self.trajectory_publish_thread.start()
@@ -97,15 +109,17 @@ class OffboardDynusFollower(BasicMavrosInterface):
     def dynus_cb(self, msg):
         self.received_trajectory_setpoint = msg
 
-    def _publish_trajectory_setpoint(self):
-        rate = 100 #Hz
+    def _publish_setpoint(self):
+        rate = 100  # Hz
         rate = self.create_rate(rate)
         while rclpy.ok():
-            if (
-                self.navigation_mode == LOCAL_NAVIGATION
-                and self.trajectory_setpoint is not None
-            ):
-                self.setpoint_traj_pub.publish(self.trajectory_setpoint)
+            if self.navigation_mode == LOCAL_NAVIGATION:
+                # During TAKEOFF: use trajectory setpoint (PX4 position controller)
+                # During TRAJECTORY: use attitude setpoint (bypass PX4 position controller)
+                if self.attitude_setpoint is not None:
+                    self.attitude_pub.publish(self.attitude_setpoint)
+                elif self.trajectory_setpoint is not None:
+                    self.setpoint_traj_pub.publish(self.trajectory_setpoint)
             rate.sleep()
 
     def point_to_traj(self, point: List):
@@ -194,6 +208,24 @@ class OffboardDynusFollower(BasicMavrosInterface):
 
         return trajectory_msg
 
+    def _pack_into_attitude(self, point: Goal):
+        """
+        Convert DYNUS goal to attitude + thrust setpoint using differential flatness.
+        Completely bypasses PX4's position controller — PX4 only does attitude/rate control.
+        """
+        quat = get_orientation(point)
+        p, q, r = get_angular(point)
+        thrust = get_thrust(point)
+
+        msg = AttitudeTarget()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        # type_mask: ignore nothing — send orientation + body rates + thrust
+        msg.type_mask = 0
+        msg.orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
+        msg.body_rate = Vector3(x=p, y=q, z=r)
+        msg.thrust = thrust
+        return msg
+
     def takeoff_and_track_trajectory(self, altitude):
 
         # wait 1 second for FCU connection
@@ -205,20 +237,15 @@ class OffboardDynusFollower(BasicMavrosInterface):
         while rclpy.ok():
             if flight_state == "TAKEOFF":
                 # self.get_logger().info("Taking Off")
-
                 self.trajectory_setpoint = takeoff_pos
 
                 if (self.traj_point_reached(takeoff_pos)
                     and self.received_trajectory_setpoint is not None):
-                    # self.get_logger().info("Takeoff Complete")
+                    self.get_logger().info("Takeoff Complete")
                     flight_state = "TRAJECTORY"
                     init_pos = takeoff_pos
 
             elif flight_state == "TRAJECTORY":
-                # Always repack setpoints from the latest DYNUS goal.
-                # No HOLD state — matching the TrajGen architecture that
-                # is proven to work. Fresh timestamps every cycle ensure
-                # PX4 always has an up-to-date setpoint with current yaw.
                 if self.received_trajectory_setpoint:
                     self.trajectory_setpoint = self._pack_into_traj(self.received_trajectory_setpoint)
 
@@ -247,7 +274,13 @@ def get_drone_frame(point):
 
     # Construct differentially flat vectors
     sigma = np.array([[point.p.x, point.p.y, point.p.z, point.yaw]]).T
-    sigma_dot_dot = np.array([[point.a.x, point.a.y, point.a.z, 0]]).T
+
+    # Clamp small accelerations to zero to avoid wobble during hover/yawing.
+    # Small odom noise can cause tiny accelerations that tilt the commanded orientation.
+    ax = point.a.x if abs(point.a.x) > 0.1 else 0.0
+    ay = point.a.y if abs(point.a.y) > 0.1 else 0.0
+    az = point.a.z if abs(point.a.z) > 0.1 else 0.0
+    sigma_dot_dot = np.array([[ax, ay, az, 0]]).T
 
     # Compute z_B
     t = np.array([[sigma_dot_dot[0][0], sigma_dot_dot[1][0], sigma_dot_dot[2][0] + g]]).T
@@ -270,6 +303,24 @@ def get_orientation(point):
     R_W_B = np.hstack((x_B, y_B, z_B))
 
     return Rotation.from_matrix(R_W_B).as_quat() # As [x, y, z, w] vector
+
+def get_thrust(point):
+    """Compute normalized thrust from differential flatness.
+    thrust = |m * (a + g*z_W)| / (m * g) maps to [0,1] where ~0.5 = hover.
+    PX4 expects thrust in [0,1] for multicopters."""
+    m = 2.906
+    g = 9.81
+    # Desired force = m*(a + g)
+    ax = point.a.x if abs(point.a.x) > 0.1 else 0.0
+    ay = point.a.y if abs(point.a.y) > 0.1 else 0.0
+    az = point.a.z if abs(point.a.z) > 0.1 else 0.0
+    f_des = np.array([m * ax, m * ay, m * (az + g)])
+    thrust_magnitude = np.linalg.norm(f_des)
+    # Normalize: hover thrust (m*g) maps to ~0.5
+    # This scaling factor depends on the vehicle; 0.5/(m*g) assumes hover at 50% throttle
+    hover_thrust = 0.50  # Tune this: actual hover throttle fraction
+    normalized = hover_thrust * thrust_magnitude / (m * g)
+    return float(np.clip(normalized, 0.1, 0.95))
 
 def get_angular(point):
     m = 2.906

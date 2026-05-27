@@ -1,5 +1,6 @@
 #! /usr/bin/env python3
 
+import os
 import rclpy
 from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from rclpy.node import Node
@@ -8,6 +9,7 @@ import math
 from threading import Thread
 from geometry_msgs.msg import PoseStamped, Pose, Point, Quaternion, Vector3
 from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
+from nav_msgs.msg import Odometry
 from std_msgs.msg import Header
 from mavros import mavlink
 from mavros_msgs.msg import (
@@ -45,7 +47,7 @@ class BasicMavrosInterface(Node):
 
         qos_profile = QoSProfile(depth=10)
         qos_profile.durability = DurabilityPolicy.VOLATILE
-        qos_profile.reliability = ReliabilityPolicy.BEST_EFFORT
+        qos_profile.reliability = ReliabilityPolicy.RELIABLE
 
         self.state = State()
         self.altitude = Altitude()
@@ -134,8 +136,13 @@ class BasicMavrosInterface(Node):
         self.home_pos_sub = self.create_subscription(HomePosition,
             "mavros/home_position/home", self.home_position_callback, qos_profile
         )
+        # Mavros publishes local_position/pose with BEST_EFFORT QoS;
+        # a RELIABLE subscriber cannot receive from a BEST_EFFORT publisher.
+        local_pos_qos = QoSProfile(depth=10)
+        local_pos_qos.durability = DurabilityPolicy.VOLATILE
+        local_pos_qos.reliability = ReliabilityPolicy.BEST_EFFORT
         self.local_pos_sub = self.create_subscription(PoseStamped,
-            "mavros/local_position/pose", self.local_position_callback, qos_profile
+            "mavros/local_position/pose", self.local_position_callback, local_pos_qos
         )
         self.mission_wp_sub = self.create_subscription(WaypointList,
             "mavros/mission/waypoints", self.mission_wp_callback, qos_profile
@@ -168,6 +175,7 @@ class BasicMavrosInterface(Node):
     def send_heartbeat(self):
         rate = self.create_rate(2)  # Hz
         while rclpy.ok():
+            print("HERE")
             self.mavlink_pub.publish(self.hb_ros_msg)
             try:  # prevent garbage in console output when thread is killed
                 rate.sleep()
@@ -227,7 +235,20 @@ class BasicMavrosInterface(Node):
             self.sub_topics_ready["home_pos"] = True
 
     def local_position_callback(self, data):
-        self.local_position = data
+        # Only use PX4's local position if Fast-LIO is not providing it
+        if not hasattr(self, '_using_flio') or not self._using_flio:
+            self.local_position = data
+
+        if not self.sub_topics_ready["local_pos"]:
+            self.sub_topics_ready["local_pos"] = True
+
+    def flio_odom_callback(self, msg):
+        """Use Fast-LIO's odom directly as local position feedback."""
+        pose = PoseStamped()
+        pose.header = msg.header
+        pose.pose = msg.pose.pose
+        self.local_position = pose
+        self._using_flio = True
 
         if not self.sub_topics_ready["local_pos"]:
             self.sub_topics_ready["local_pos"] = True
