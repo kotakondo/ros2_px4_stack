@@ -28,8 +28,11 @@ class OdomRepublisher(Node):
             self._mocap_pose_sub = self.create_subscription(PoseStamped, self.pose_sub_topic_name, self._mocap_pose_cb, 10)
             self._mocap_twist_sub = self.create_subscription(TwistStamped, self.twist_sub_topic_name, self._mocap_twist_cb, 10)
         elif self.odom_type == "livox":
+            # Onboard lidar-inertial odometry. NOTE: the launcher runs DLIO
+            # (sando_tmux use_onboard_loc), not FAST-LIO, so subscribe to the
+            # DLIO odom topic. Override ~odom_sub_topic_name if using FAST-LIO.
             self.odom_sub_topic_name = self.declare_parameter(
-                "~odom_sub_topic_name", namespace + "/fast_lio/Odometry"
+                "~odom_sub_topic_name", namespace + "/dlio/odom_node/odom"
             ).value
             self._odom_sub = self.create_subscription(Odometry, self.odom_sub_topic_name, self._livox_odom_cb, 10)
 
@@ -94,12 +97,15 @@ class OdomRepublisher(Node):
         pose_msg.pose.pose = msg.pose.pose
 
         pose_cov = [0.0] * 36
-        pose_cov[0]  = 0.001   # x  variance [m^2]
-        pose_cov[7]  = 0.001   # y  variance [m^2]
-        pose_cov[14] = 0.001   # z  variance [m^2]
-        pose_cov[21] = 0.001   # roll  variance [rad^2]
-        pose_cov[28] = 0.001   # pitch variance [rad^2]
-        pose_cov[35] = 0.001   # yaw   variance [rad^2]
+        # Realistic variances. 0.001 (std ~3cm / ~1.8deg) is so confident that
+        # EKF2's innovation gate rejects vision during FAST-LIO startup transients,
+        # which stalls convergence. Used by EKF2 only when EKF2_EV_NOISE_MD = 0.
+        pose_cov[0]  = 0.05    # x  variance [m^2]   (std ~22 cm)
+        pose_cov[7]  = 0.05    # y  variance [m^2]
+        pose_cov[14] = 0.05    # z  variance [m^2]
+        pose_cov[21] = 0.03    # roll  variance [rad^2] (std ~10 deg)
+        pose_cov[28] = 0.03    # pitch variance [rad^2]
+        pose_cov[35] = 0.03    # yaw   variance [rad^2]
         pose_msg.pose.covariance = pose_cov
         self._last_pose_msg = pose_msg
 
@@ -110,12 +116,12 @@ class OdomRepublisher(Node):
         twist_msg.twist.twist = msg.twist.twist
 
         twist_cov = [0.0] * 36
-        twist_cov[0]  = 0.001   # vx variance [(m/s)^2]
-        twist_cov[7]  = 0.001   # vy variance [(m/s)^2]
-        twist_cov[14] = 0.001   # vz variance [(m/s)^2]
-        twist_cov[21] = 0.001   # wx variance [(rad/s)^2]
-        twist_cov[28] = 0.001   # wy variance [(rad/s)^2]
-        twist_cov[35] = 0.001   # wz variance [(rad/s)^2]
+        twist_cov[0]  = 0.05    # vx variance [(m/s)^2]
+        twist_cov[7]  = 0.05    # vy variance [(m/s)^2]
+        twist_cov[14] = 0.05    # vz variance [(m/s)^2]
+        twist_cov[21] = 0.03    # wx variance [(rad/s)^2]
+        twist_cov[28] = 0.03    # wy variance [(rad/s)^2]
+        twist_cov[35] = 0.03    # wz variance [(rad/s)^2]
         twist_msg.twist.covariance = twist_cov
         self._last_twist_msg = twist_msg
 

@@ -18,8 +18,8 @@ class InitialPose(Node):
         if odom_type == "mocap":
             self.create_subscription(PoseStamped, namespace + "/world", self.pose_cb, 10)
         elif odom_type == "livox":
-            # Wait for LiDAR odometry (DLIO or Fast-LIO) for gravity-aligned orientation.
-            self.create_subscription(Odometry, namespace + "/fast_lio/Odometry", self.odom_cb, 10)
+            # Wait for LiDAR odometry (DLIO) for gravity-aligned orientation.
+            self.create_subscription(Odometry, namespace + "/dlio/odom_node/odom", self.odom_cb, 10)
             # Also subscribe to mocap for the world-frame position at init
             self.mocap_pose = None
             self.create_subscription(PoseStamped, namespace + "/world", self.mocap_cb, 10)

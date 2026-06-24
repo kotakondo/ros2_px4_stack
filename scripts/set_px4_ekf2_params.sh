@@ -12,6 +12,12 @@ echo "Setting PX4 parameters on namespace: $NS"
 # --- EKF2: External Vision Fusion ---
 # Use vision for position/velocity/yaw
 ros2 service call ${NS}/mavros/param/set mavros_msgs/srv/ParamSet "{param_id: 'EKF2_EV_CTRL', value: {integer: 15}}"
+# EV noise source: 0 = use the covariance carried in the message (repub_odom),
+#                  1 = use the EKF2_EV*_NOISE params below.
+# We feed covariance from repub_odom, so use mode 0. CRITICAL: if this is 1 while
+# EKF2_EVP_NOISE/EKF2_EVV_NOISE are 0.0, EKF2 trusts vision infinitely and the
+# innovation gate rejects every update -> local_position/pose never converges.
+ros2 service call ${NS}/mavros/param/set mavros_msgs/srv/ParamSet "{param_id: 'EKF2_EV_NOISE_MD', value: {integer: 0}}"
 # Vision position noise [m] — lower = more trust in DLIO
 ros2 service call ${NS}/mavros/param/set mavros_msgs/srv/ParamSet "{param_id: 'EKF2_EVP_NOISE', value: {real: 0.01}}"
 # Vision velocity noise [m/s]

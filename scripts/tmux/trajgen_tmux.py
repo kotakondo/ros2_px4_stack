@@ -82,11 +82,12 @@ if __name__ == "__main__":
         
     commands = [
         f"ros2 launch mavros px4.launch namespace:={veh}/mavros tgt_system:={mav_id}",  # Command for pane 1
+        # "ros2 launch trajectory_generator goal_replay.launch.py",
         "ros2 launch trajectory_generator_ros2 onboard.launch.py",  # Command for pane 2
         "ros2 launch trajectory_generator_ros2 base_station.launch.py",  # Command for pane 3
         f"ros2 launch ros2_px4_stack offboard_gen_traj.launch.py odom_type:={odom_type}",  # Command for pane 4,
-        f"source ~/code/livox_ws/install/setup.bash && sleep 10 && ros2 launch livox_ros_driver2 run_MID360_launch.py namespace:={veh}", # Pane 5
-        f"source ~/code/dynus_ws/install/setup.bash && source ~/code/dlio_ws/install/setup.bash && sleep 10 && ros2 launch direct_lidar_inertial_odometry dlio.launch.py namespace:={veh}", # Pane 6
+        # f"source ~/code/livox_ws/install/setup.bash && sleep 10 && ros2 launch livox_ros_driver2 run_MID360_launch.py namespace:={veh}", # Pane 5
+        # f"source ~/code/dynus_ws/install/setup.bash && source ~/code/dlio_ws/install/setup.bash && sleep 10 && ros2 launch direct_lidar_inertial_odometry dlio.launch.py namespace:={veh}", # Pane 6
         f"sleep 10.0 && ros2 topic echo {veh}/mavros/local_position/pose", # Pane 7
         f"sleep 10.0 && ros2 topic echo /{veh}" + gt_odom_topic, # Pane  8
         "sleep 10.0 && ros2 topic echo /SQ01/goal", 
