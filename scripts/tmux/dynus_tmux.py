@@ -89,7 +89,7 @@ def run_tmux_commands(session_name, commands, top_pane=None):
                 send_keys_args.append("C-m")
             subprocess.run(send_keys_args, check=True)
 
-        # Last pane is a blank shell with dynus_ws sourced
+        # Last pane is a blank shell with mighty_ws sourced
         blank_pane = f"{session_name}:{w}.{p + len(commands)}"
         subprocess.run(
             ["tmux", "select-pane", "-t", blank_pane, "-T", "SHELL"],
@@ -97,7 +97,7 @@ def run_tmux_commands(session_name, commands, top_pane=None):
         )
         subprocess.run(
             ["tmux", "send-keys", "-t", blank_pane,
-             "source ~/code/dynus_ws/install/setup.bash", "C-m"],
+             "source ~/code/mighty_ws/install/setup.bash", "C-m"],
             check=True,
         )
 
@@ -154,7 +154,7 @@ if __name__ == "__main__":
 
     commands = [
         # ("DYNUS", (
-        #     f"source ~/code/dynus_ws/install/setup.bash && "
+        #     f"source ~/code/mighty_ws/install/setup.bash && "
         #     f"source ~/code/decomp_ws/install/setup.bash && "
         #     f"sleep 10 && "
         #     f"ros2 launch dynus onboard_dynus.launch.py "
@@ -205,22 +205,22 @@ if __name__ == "__main__":
     # Both DLIO and FAST-LIO cannot run simultaneously (CPU starvation).
     # if use_onboard_loc:
     #     commands.append(("DLIO", (
-    #         f"source ~/code/dynus_ws/install/setup.bash && "
+    #         f"source ~/code/mighty_ws/install/setup.bash && "
     #         f"source ~/code/dlio_ws/install/setup.bash && "
     #         f"sleep 10 && "
     #         f"ros2 launch direct_lidar_inertial_odometry dlio.launch.py namespace:={veh}"
     #     )))
 
     commands += [
-        ("FAST-LIO", (
-            f"source ~/code/livox_ws/install/setup.bash && "
-            f"source ~/code/fast_lio_ws/install/setup.bash && "
-            f"sleep 15 && "
-            f"taskset -c 13,14,15 ros2 launch fast_lio mapping.launch.py config_file:=mid360.yaml rviz:=false namespace:={veh}/fast_lio"
+        ("DLIO", (
+            f"source ~/code/mighty_ws/install/setup.bash && "
+            f"source ~/code/dlio_ws/install/setup.bash && "
+            f"sleep 10 && "
+            f"ros2 launch direct_lidar_inertial_odometry dlio.launch.py namespace:={veh}"
         )),
 
         ("PX4 BRIDGE", (
-            f"source ~/code/dynus_ws/install/setup.bash && "
+            f"source ~/code/mighty_ws/install/setup.bash && "
             f"sleep 20 && "
             f"export ODOM_TYPE={odom_type} && "
             f"source ~/code/get_init_pose.sh && "
@@ -230,33 +230,33 @@ if __name__ == "__main__":
         ("BAG RECORD", (
             f"sleep 15 && "
             f"source ~/code/decomp_ws/install/setup.bash && "
-            f"source ~/code/dynus_ws/install/setup.bash && "
+            f"source ~/code/mighty_ws/install/setup.bash && "
             f"source ~/code/livox_ws/install/setup.bash && "
             f"BAG_NAME=$(date +%Y%m%d_%H%M%S) && "
             f"mkdir -p ~/data/dynus && "
-            f"python3 ~/code/dynus_ws/src/dynus/scripts/bag_record.py "
+            f"python3 ~/code/mighty_ws/src/dynus/scripts/bag_record.py "
             f"--bag_name $BAG_NAME --bag_path ~/data/dynus --hardware --agents {veh}"
         )),
 
          ("ZENOH", (
              f"source ~/code/zenoh_ws/install/setup.bash && "
              f"source ~/code/decomp_ws/install/setup.bash && "
-             f"source ~/code/dynus_ws/install/setup.bash && "
+             f"source ~/code/mighty_ws/install/setup.bash && "
              f"echo 'Zenoh mode: {zenoh_mode}' && "
              f"ros2 run zenoh_vendor zenoh-bridge-ros2dds "
              f"-c ~/code/zenoh_ws/src/zenoh_vendor/configs/zenoh_agent_{zenoh_mode}.json5"
          )),
 
         ("ACL MAP", (
-            f"source ~/code/dynus_ws/install/setup.bash && "
+            f"source ~/code/mighty_ws/install/setup.bash && "
             f"ros2 launch global_mapper_ros global_mapper_node.launch.py "
-            f"quad:={veh} depth_pointcloud_topic:=livox/lidar hardware:=true "
+            f"quad:=PX01 depth_pointcloud_topic:=livox/lidar hardware:=true "
             f"pose_topic:=global_pose"
         )),
 
         ("ODOM MONITOR", (
             f"source ~/code/mavros_ws/install/setup.bash && "
-            f"source ~/code/dynus_ws/install/setup.bash && "
+            f"source ~/code/mighty_ws/install/setup.bash && "
             f"sleep 25 && "
             f"export ODOM_TYPE={odom_type} && source ~/code/get_init_pose.sh && "
             f"python3 ~/code/mavros_ws/src/ros2_px4_stack/scripts/monitor/side_by_side.py"
@@ -266,8 +266,8 @@ if __name__ == "__main__":
             "cd ~/data/dynus && ls -lt"),
 
         ("GOAL MONITOR", (
-            f"source ~/code/dynus_ws/install/setup.bash && "
-            f"ros2 launch dynus goal_monitor.launch.py"
+            f"source ~/code/mighty_ws/install/setup.bash && "
+            f"ros2 launch mighty goal_monitor.launch.py"
         ), False),
 
         # ("SEND GOAL", (
